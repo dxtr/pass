@@ -8,9 +8,9 @@
 
 ;; blah blah blah.
 ;(require :uiop/image)
-(require :getopt)
-(require :cl-ppcre)
-(require :utilities.print-tree)
+;(require :getopt)
+;(require :cl-ppcre)
+;(require :utilities.print-tree)
 
 (defun getenv (name)
   (uiop:getenv name))
