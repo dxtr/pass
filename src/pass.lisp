@@ -6,14 +6,9 @@
 	   :*compiled*))
 (in-package #:pass)
 
-;; blah blah blah.
-;(require :uiop/image)
 ;(require :getopt)
 ;(require :cl-ppcre)
 ;(require :utilities.print-tree)
-
-(defun getenv (name)
-  (uiop:getenv name))
 
 (defparameter *opts* '(("h" :none)
 		       ("p" :required)
@@ -33,14 +28,14 @@
 (defvar *nflag* nil)
 (defvar *iflag* nil)
 (defvar *rflag* nil)
-(defvar *prefix* (uiop:merge-pathnames* (getenv "HOME") "/.password-store"))
-(defvar *gpg-id* (uiop:merge-pathnames* *prefix* "/.gpg-id"))
-(defvar *git-dir* (uiop:merge-pathnames* *prefix* "/.git"))
+(defvar *prefix* (concatenate 'string (uiop:getenv "HOME") "/.password-store/"))
+(defvar *gpg-id* (concatenate 'string *prefix* ".gpg-id"))
+(defvar *git-dir* (concatenate 'string *prefix* ".git"))
 (defvar *gpg-recipient* "")
 (defvar *editor* "")
 (defvar *compiled* nil)
 
-(let ((e (getenv "EDITOR")))
+(let ((e (uiop:getenv "EDITOR")))
   (setf *editor* (if e e "vi")))
 
 (defun is-compiled ()
@@ -56,19 +51,8 @@
 
 (defun err (msg &optional die)
   (warn msg)
-  (if (not (null die))
-      #+sbcl (sb-ext:exit :code 1)
-      #+ccl (ccl:quit)))
-
-(defun change-prefix (new)
-  (if new
-      (progn
-	(setf *prefix* new)
-	(setf *gpg-id* (concatenate 'string *prefix* "/.gpg-id"))
-	(setf *git-dir* (concatenate 'string *prefix* "/.git"))
-
-	;; TODO: Change cwd if possible
-	)))
+  (if die
+      (uiop:quit 1)))
 
 (defun prefix-exists ()
   (if (uiop:directory-exists-p (make-pathname :name *prefix*)) t nil))
@@ -79,18 +63,34 @@
 (defun git-dir-exists ()
   (if (uiop:directory-exists-p (make-pathname :name *prefix*)) t nil))
 
-(defun git-commit (message)
-  (uiop:run-program `("git" "commit" "-Sm" ,message)))
+(defun change-prefix (new)
+  (if new
+      (progn
+	(setf *prefix* new)
+	(setf *gpg-id* (concatenate 'string *prefix* ".gpg-id"))
+	(setf *git-dir* (concatenate 'string *prefix* ".git"))
 
-(defun git-add-file (file message)
-  (uiop:run-program `("git" "add" ,file))
-  (git-commit message))
+	(if (prefix-exists)
+	    (uiop:chdir *prefix*)))))
+
+(defun exec (command)
+  (uiop:run-program command :output :interactive
+		    :error-output :interactive))
+
+(defun git-commit (message)
+					;(uiop:run-program `("git" "commit" "-Sm" ,message) :output :interactive)
+  (format t "~A~%" message)
+  (exec `("git" "commit" "-S" ,*gpg-recipient* "-m" ,message)))
+(defun git-add (file &optional message)
+					;(uiop:run-program `("git" "add" ,file) :output :interactive)
+  (exec `("git" "add" "-f" ,file))
+  (git-commit (if message message (concatenate 'string "Added " file))))
 
 (defun is-prefix-initialized ()
   (and (prefix-exists) (gpg-id-exists) (git-dir-exists)))
 
 (defun check-sneaky-paths (path)
-  nil)
+  path)
 
 (defun parse-argv (argv)
   (multiple-value-bind (args opts)
@@ -110,34 +110,43 @@
     (cdr args)))
 
 (defun reencrypt-path (path)
-  nil)
+  path)
 
 (defun cmd-init (args)
   (if (null args)
       (progn
 	(format t "Usage: pass init [--path=subfolder] gpg-id...")
-	(uiop:quit 1)))
-  (if (not (null *pflag*))
+	(uiop:quit 1))
+      (setf *gpg-recipient* (car args)))
+  (if *pflag*
       (change-prefix *pflag*))
-  (if (is-prefix-initialized)
-      (progn
-	(format t "~A is already initialized!" *prefix*)
-	(uiop:quit 1)))
+  (if (prefix-exists)
+      (err "Subfolder already exists!" t))
+  (if (gpg-id-exists)
+      (err "gpg-id already exists!" t))
+  (format t "Creating directory...~%")
   (ensure-directories-exist (concatenate 'string *prefix* "/"))
-  (chdir *prefix*)
+  (format t "Changing directory...~%")
+  (uiop:chdir *prefix*)
   ;; This isn't necessary when we have implemented reencrypt-path
   (with-open-file (stream *gpg-id*
 			  :direction :output
 			  :if-exists :error
 			  :if-does-not-exist :create)
     (write-line (car args) stream))
+  (format t "Creating git repository...~%")
   (uiop:run-program '("git" "init"))
-  (reencrypt-path (*prefix)))
-
-(defun cmd-ls (args)
-  (format t "list ~A" args))
+  (reencrypt-path *prefix*)
+  (git-add *gpg-id*)
+  t)
 
 (defun cmd-show (args)
+  (if (null args)
+      (setf args ""))
+  (cond
+    ((probe-file (concatenate *prefix* "/" (car args))) (format t "TODO"))
+    ((uiop:directory-exists-p (make-pathname :name (concatenate *prefix* (car args)))) (format t "TODO"))
+    (t (format t "WUT")))
   (format t "show ~A" args))
 
 (defun cmd-grep (args)
@@ -177,10 +186,9 @@
   (let* ((args (parse-argv argv))
 	 (cmd (car args))
 	 (params (cdr args)))
-    (format t "args: ~A~%" args)
     (cond ((string-equal cmd "init") (cmd-init params))
-	  ((string-equal cmd "list") (format t "list"))
-	  ((string-equal cmd "show") (format t "show")))
+	  ((string-equal cmd "list") (cmd-show params))
+	  ((string-equal cmd "show") (cmd-show params)))
     (case (car args)
       ("init" (cmd-init (cdr args)))
       ;("ls" (cmd-ls (cdr args)))
@@ -202,4 +210,56 @@
       ))
   (uiop:quit 0))
 
-(main nil)
+;(main nil)
+
+(defun format-directory-path (dir)
+  (setf dir (cond
+	      ((stringp dir) dir)
+	      ((pathnamep dir) (namestring dir))
+	      (t nil)))
+
+  (if (not (equal dir nil))
+      (progn
+	(unless (string= (char dir (- (length dir) 1)) #\/)
+	  (setf dir (concatenate 'string dir "/")))
+	(pathname dir))
+      nil))
+
+(defun traverse-directory (dir)
+  (let*
+      ((fdir (format-directory-path dir))
+       (tree `(,(first (last (pathname-directory fdir))))))
+    ;; First we collect subdirectories
+    (loop for d on (uiop:subdirectories fdir) do
+	 (let ((dir-basename (first (last (pathname-directory (first d))))))
+	   (unless (string= (char dir-basename 0) #\.)
+	     (push (traverse-directory (first d)) tree))))
+    (loop for f on (uiop:directory-files fdir) do
+	 (let ((file-basename (file-namestring (first f))))
+	   (unless (string= (char file-basename 0) #\.)
+	     (push file-basename tree))))
+    (reverse tree)))
+
+(defun print-tree (tree &optional (prefix ""))
+  (let ((iterations (- (list-length tree) 1)))
+    (loop for node in tree
+       for cnt from 0 to iterations
+       do
+	 (let* ((last-iteration (= cnt iterations))
+		(is-list (listp node))
+		(n (if is-list (first node) node)))
+	   (princ prefix)
+	   (princ (if last-iteration "`-- " "|-- "))
+	   (princ n)
+	   (format t "~%")
+	   (when is-list
+	     (print-tree (rest node)
+			 (concatenate 'string prefix
+				      (if last-iteration
+					  "    "
+					  "|   "))))))))
+
+(defun print-directory-tree (dir)
+  (print-tree `(,(traverse-directory dir))))
+
+
