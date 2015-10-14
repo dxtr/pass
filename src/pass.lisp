@@ -6,10 +6,6 @@
 	   :*compiled*))
 (in-package #:pass)
 
-;(require :getopt)
-;(require :cl-ppcre)
-;(require :utilities.print-tree)
-
 (defparameter *opts* '(("h" :none)
 		       ("p" :required)
 		       ("e" :none)
@@ -141,13 +137,11 @@
   t)
 
 (defun cmd-show (args)
-  (if (null args)
-      (setf args ""))
   (cond
+    ((null args) (print-directory-tree *prefix*))
     ((probe-file (concatenate *prefix* "/" (car args))) (format t "TODO"))
     ((uiop:directory-exists-p (make-pathname :name (concatenate *prefix* (car args)))) (format t "TODO"))
-    (t (format t "WUT")))
-  (format t "show ~A" args))
+    (t (format t "WUT"))))
 
 (defun cmd-grep (args)
   (format t "grep ~A" args))
@@ -191,7 +185,7 @@
 	  ((string-equal cmd "show") (cmd-show params)))
     (case (car args)
       ("init" (cmd-init (cdr args)))
-      ;("ls" (cmd-ls (cdr args)))
+      ("ls" (cmd-ls (cdr args)))
       ;("list" (cmd-ls (cdr args)))
       ;("show" (cmd-ls (cdr args)))
 					;("find" (cmd-find (cdr args)))
@@ -229,7 +223,6 @@
   (let*
       ((fdir (format-directory-path dir))
        (tree `(,(first (last (pathname-directory fdir))))))
-    ;; First we collect subdirectories
     (loop for d on (uiop:subdirectories fdir) do
 	 (let ((dir-basename (first (last (pathname-directory (first d))))))
 	   (unless (string= (char dir-basename 0) #\.)
@@ -238,6 +231,7 @@
 	 (let ((file-basename (file-namestring (first f))))
 	   (unless (string= (char file-basename 0) #\.)
 	     (push file-basename tree))))
+    (format t "~A: ~A~%" dir tree)
     (reverse tree)))
 
 (defun print-tree (tree &optional (prefix ""))

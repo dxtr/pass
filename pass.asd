@@ -7,17 +7,19 @@
   Author: Kim Lidström (kim@dxtr.im)
 |#
 
-(defsystem :pass
+;(in-package :cl-user)
+
+(asdf:defsystem :pass
   :version "0.1"
   :author "Kim Lidström"
   :license "ISC"
-  :depends-on (:getopt :cl-ppcre :getopt :utilities.print-tree)
+  :depends-on (:getopt :cl-ppcre :getopt :cffi)
   :components ((:file "pass"))
   :pathname "src/"
   :description "lulz"
   :long-description
   #.(with-open-file (stream (merge-pathnames
-                             #p"README.markdown"
+                             #p"README.md"
                              (or *load-pathname* *compile-file-pathname*))
                             :if-does-not-exist nil
                             :direction :input)
